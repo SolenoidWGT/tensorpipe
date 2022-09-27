@@ -360,17 +360,6 @@ inline std::tuple<int, InterfaceAddresses, int> getInterfaceAddresses() {
       0, InterfaceAddresses(info, InterfaceAddressesDeleter(count)), count);
 }
 
-inline std::tuple<int, std::string> getHostname() {
-  std::array<char, UV_MAXHOSTNAMESIZE> hostname;
-  size_t size = hostname.size();
-  auto rv = uv_os_gethostname(hostname.data(), &size);
-  if (rv != 0) {
-    return std::make_tuple(rv, std::string());
-  }
-  return std::make_tuple(
-      0, std::string(hostname.data(), hostname.data() + size));
-}
-
 inline std::string formatUvError(int status) {
   if (status == 0) {
     return "success";

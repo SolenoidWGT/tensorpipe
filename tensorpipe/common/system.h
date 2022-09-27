@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <climits>
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -17,6 +18,8 @@
 #include <vector>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/error.h>
+#include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/optional.h>
 
 namespace tensorpipe {
@@ -126,4 +129,15 @@ optional<std::string> getPermittedCapabilitiesID();
 // Set the name of the current thread, if possible. Use only for debugging.
 void setThreadName(std::string name);
 
+inline std::tuple<Error, std::string> getHostname() {
+  std::array<char, HOST_NAME_MAX> hostname;
+  auto rv = ::gethostname(hostname.data(), hostname.size());
+  if (rv < 0) {
+    return std::make_tuple(
+        TP_CREATE_ERROR(SystemError, "gethostname", errno), std::string());
+  }
+  return std::make_tuple(Error::kSuccess, std::string(hostname.data()));
+}
+
+uint64_t getHashOfHostname();
 } // namespace tensorpipe

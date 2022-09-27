@@ -109,7 +109,8 @@ struct DeviceDescriptor {
   std::string bootId;
   int64_t pid;
   std::string deviceUuid;
-  NOP_STRUCTURE(DeviceDescriptor, bootId, pid, deviceUuid);
+  uint64_t hostHash;
+  NOP_STRUCTURE(DeviceDescriptor, bootId, pid, deviceUuid, hostHash);
 };
 
 DeviceDescriptor deserializeDeviceDescriptor(
@@ -244,6 +245,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     deviceDescriptor.bootId = bootId;
     deviceDescriptor.pid = static_cast<int64_t>(pid);
     deviceDescriptor.deviceUuid = getUuidOfDevice(cudaLib, device.index);
+    deviceDescriptor.hostHash = tensorpipe::getHashOfHostname();
 
     deviceDescriptors[device] = saveDescriptor(nopHolder);
   }
@@ -314,6 +316,13 @@ bool ContextImpl::canCommunicateWithRemote(
       deserializeDeviceDescriptor(remoteDeviceDescriptor);
 
   if (nopLocalDeviceDescriptor.bootId != nopRemoteDeviceDescriptor.bootId) {
+    return false;
+  }
+
+  if (nopLocalDeviceDescriptor.hostHash != nopRemoteDeviceDescriptor.hostHash) {
+    TP_VLOG(4) << "local hostHash [" << nopLocalDeviceDescriptor.hostHash
+               << "] != remote hostHash [" << nopRemoteDeviceDescriptor.hostHash
+               << "], so can't use cuda ipc";
     return false;
   }
 

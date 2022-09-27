@@ -295,4 +295,18 @@ void setThreadName(std::string name) {
 #endif
 }
 
+uint64_t getHashOfHostname() {
+  Error error;
+  std::string hostname;
+  uint64_t hostameHash = 5381;
+  size_t len = 0;
+  std::tie(error, hostname) = getHostname();
+  TP_THROW_ASSERT_IF(error) << error.what();
+  len = hostname.size();
+  for (int c = 0; c < len; c++) {
+    hostameHash = ((hostameHash << 5) + hostameHash) ^ hostname[c];
+  }
+  return hostameHash;
+}
+
 } // namespace tensorpipe
