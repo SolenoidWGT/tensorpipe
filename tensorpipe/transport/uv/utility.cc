@@ -9,6 +9,7 @@
 #include <tensorpipe/transport/uv/utility.h>
 
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/common/system.h>
 #include <tensorpipe/transport/uv/error.h>
 #include <tensorpipe/transport/uv/sockaddr.h>
 #include <tensorpipe/transport/uv/uv.h>
@@ -85,10 +86,11 @@ std::tuple<Error, std::string> lookupAddrForHostname() {
   const InlineDeferredExecutor executor;
 
   int rv;
+  Error error;
   std::string hostname;
-  std::tie(rv, hostname) = getHostname();
-  if (rv < 0) {
-    return std::make_tuple(TP_CREATE_ERROR(UVError, rv), std::string());
+  std::tie(error, hostname) = tensorpipe::getHostname();
+  if (error) {
+    return std::make_tuple(std::move(error), std::string());
   }
 
   Addrinfo info;
@@ -97,7 +99,6 @@ std::tuple<Error, std::string> lookupAddrForHostname() {
     return std::make_tuple(TP_CREATE_ERROR(UVError, rv), std::string());
   }
 
-  Error error;
   for (struct addrinfo* rp = info.get(); rp != nullptr; rp = rp->ai_next) {
     TP_DCHECK(rp->ai_family == AF_INET || rp->ai_family == AF_INET6);
     TP_DCHECK_EQ(rp->ai_socktype, SOCK_STREAM);

@@ -26,6 +26,7 @@
 
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/socket.h>
+#include <tensorpipe/common/system.h>
 #include <tensorpipe/transport/ibv/error.h>
 #include <tensorpipe/transport/ibv/sockaddr.h>
 
@@ -53,16 +54,6 @@ std::tuple<Error, InterfaceAddresses> createInterfaceAddresses() {
         InterfaceAddresses());
   }
   return std::make_tuple(Error::kSuccess, InterfaceAddresses(ifaddrs));
-}
-
-std::tuple<Error, std::string> getHostname() {
-  std::array<char, HOST_NAME_MAX> hostname;
-  auto rv = ::gethostname(hostname.data(), hostname.size());
-  if (rv < 0) {
-    return std::make_tuple(
-        TP_CREATE_ERROR(SystemError, "gethostname", errno), std::string());
-  }
-  return std::make_tuple(Error::kSuccess, std::string(hostname.data()));
 }
 
 struct AddressInfoDeleter {
@@ -128,7 +119,7 @@ std::tuple<Error, std::string> lookupAddrForIface(std::string iface) {
 std::tuple<Error, std::string> lookupAddrForHostname() {
   Error error;
   std::string hostname;
-  std::tie(error, hostname) = getHostname();
+  std::tie(error, hostname) = tensorpipe::getHostname();
   if (error) {
     return std::make_tuple(std::move(error), std::string());
   }
