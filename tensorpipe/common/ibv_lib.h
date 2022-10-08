@@ -42,7 +42,8 @@ namespace tensorpipe {
   _(query_port, int, (IbvLib::context*, uint8_t, IbvLib::port_attr*)) \
   _(reg_mr, IbvLib::mr*, (IbvLib::pd*, void*, size_t, int))           \
   _(wc_status_str, const char*, (IbvLib::wc_status))                  \
-  _(port_state_str, const char*, (IbvLib::port_state))
+  _(port_state_str, const char*, (IbvLib::port_state))                \
+  _(fork_init, int, (void))
 
 // Wrapper for libibverbs.
 
