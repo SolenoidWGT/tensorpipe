@@ -44,6 +44,10 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     return nullptr;
   }
 
+  // ibv_fork_init() should be called before calling any other function in
+  // libibverbs.
+  ibvLib.fork_init();
+
   IbvDeviceList deviceList;
   std::tie(error, deviceList) = IbvDeviceList::create(ibvLib);
   if (error && error.isOfType<SystemError>() &&
