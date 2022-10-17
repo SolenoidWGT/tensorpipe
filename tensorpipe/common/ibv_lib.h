@@ -250,6 +250,17 @@ class IbvLib {
     WR_DRIVER1,
   };
 
+  enum {
+    LINK_LAYER_UNSPECIFIED,
+    LINK_LAYER_INFINIBAND,
+    LINK_LAYER_ETHERNET,
+
+    /* Leave a gap for future link layer types before starting with
+     * experimental link layer.
+     */
+    EXP_LINK_LAYER_START = 32,
+    EXP_LINK_LAYER_SCIF = EXP_LINK_LAYER_START
+  };
   // Structs and unions
 
   // Forward declarations

@@ -9,6 +9,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/ibv_lib.h>
@@ -37,61 +38,6 @@ namespace tensorpipe {
 std::string ibvWorkCompletionOpcodeToStr(IbvLib::wc_opcode opcode);
 
 // RAII wrappers
-
-class IbvDeviceList {
- private:
-  IbvDeviceList(const IbvLib& ibvLib, IbvLib::device** ptr, int size)
-      : deviceList_(ptr, Deleter{&ibvLib}), size_(size) {}
-
- public:
-  IbvDeviceList() = default;
-
-  static std::tuple<Error, IbvDeviceList> create(const IbvLib& ibvLib) {
-    int size;
-    IbvLib::device** ptr = ibvLib.get_device_list(&size);
-    if (ptr == nullptr) {
-      // Earlier versions of libibverbs had a bug where errno would be set to
-      // *negative* ENOSYS when the module wasn't found. This got fixed in
-      // https://github.com/linux-rdma/rdma-core/commit/062bf1a72badaf6ad2d51ebe4c8c8bdccfc376e2
-      // However, to support those versions, we manually flip it in case.
-      return std::make_tuple(
-          TP_CREATE_ERROR(
-              SystemError,
-              "ibv_get_device_list",
-              errno == -ENOSYS ? ENOSYS : errno),
-          IbvDeviceList());
-    }
-    return std::make_tuple(Error::kSuccess, IbvDeviceList(ibvLib, ptr, size));
-  }
-
-  int size() {
-    return size_;
-  }
-
-  IbvLib::device& operator[](int i) {
-    return *deviceList_.get()[i];
-  }
-
-  void reset() {
-    deviceList_.reset();
-  }
-
-  // FIXME Can we support a "range" API (i.e., a begin() and end() method) so
-  // that this can be used in a for (auto& dev : deviceList) expression?
-
- private:
-  struct Deleter {
-    void operator()(IbvLib::device** ptr) {
-      TP_CHECK_IBV_VOID(ibvLib->free_device_list(ptr));
-    }
-
-    const IbvLib* ibvLib;
-  };
-
-  std::unique_ptr<IbvLib::device*, Deleter> deviceList_;
-  int size_;
-};
-
 struct IbvContextDeleter {
   void operator()(IbvLib::context* ptr) {
     TP_CHECK_IBV_INT(ibvLib->close_device(ptr));
@@ -109,6 +55,107 @@ inline IbvContext createIbvContext(
       TP_CHECK_IBV_PTR(ibvLib.open_device(&device)),
       IbvContextDeleter{&ibvLib});
 }
+
+class IbvDeviceList {
+ private:
+  IbvDeviceList(
+      const IbvLib& ibvLib,
+      IbvLib::device** ptr,
+      int size,
+      std::vector<IbvLib::device*>&& available_deviceList)
+      : deviceList_(ptr, Deleter{&ibvLib}),
+        size_(size),
+        available_deviceList_(available_deviceList) {}
+
+ public:
+  IbvDeviceList() = default;
+
+  static std::tuple<Error, IbvDeviceList> create(
+      const IbvLib& ibvLib,
+      const uint8_t kPortNum = 1) {
+    int size;
+    std::vector<IbvLib::device*> available_deviceList;
+    IbvLib::device** ptr = ibvLib.get_device_list(&size);
+    if (ptr == nullptr) {
+      // Earlier versions of libibverbs had a bug where errno would be set to
+      // *negative* ENOSYS when the module wasn't found. This got fixed in
+      // https://github.com/linux-rdma/rdma-core/commit/062bf1a72badaf6ad2d51ebe4c8c8bdccfc376e2
+      // However, to support those versions, we manually flip it in case.
+      return std::make_tuple(
+          TP_CREATE_ERROR(
+              SystemError,
+              "ibv_get_device_list",
+              errno == -ENOSYS ? ENOSYS : errno),
+          IbvDeviceList());
+    }
+
+    // If the deviceList contains multiple ibv devices, we will select the
+    // device of the port whose port_state is active, instead of just selecting
+    // the first device in the deviceList by default.
+    for (int i = 0; i < size; i++) {
+      IbvContext tp_ctx_;
+      IbvLib::port_attr portAttr;
+      std::memset(&portAttr, 0, sizeof(portAttr));
+      tp_ctx_ = createIbvContext(ibvLib, *ptr[i]);
+      TP_CHECK_IBV_INT(ibvLib.query_port(tp_ctx_.get(), kPortNum, &portAttr));
+
+      if (portAttr.link_layer != IbvLib::LINK_LAYER_INFINIBAND &&
+          portAttr.link_layer != IbvLib::LINK_LAYER_ETHERNET) {
+        TP_VLOG(8)
+            << "IbvDevice " << ptr[i]->name << " port " << unsigned(kPortNum)
+            << " link_layer is not IBV_LINK_LAYER_INFINIBAND or IBV_LINK_LAYER_ETHERNET"
+            << " , skip this device";
+        continue;
+      }
+
+      if (portAttr.state != IbvLib::port_state::PORT_ACTIVE) {
+        TP_VLOG(8) << "IbvDevice " << ptr[i]->name << " port "
+                   << unsigned(kPortNum) << " state is "
+                   << ibvLib.port_state_str(portAttr.state)
+                   << " , skip this device";
+        continue;
+      }
+      available_deviceList.push_back(ptr[i]);
+    }
+
+    return std::make_tuple(
+        Error::kSuccess,
+        IbvDeviceList(
+            ibvLib,
+            ptr,
+            available_deviceList.size(),
+            std::move(available_deviceList)));
+  }
+
+  int size() {
+    return size_;
+  }
+
+  IbvLib::device& operator[](int i) {
+    return *available_deviceList_[i];
+  }
+
+  void reset() {
+    available_deviceList_.clear();
+    deviceList_.reset();
+  }
+
+  // FIXME Can we support a "range" API (i.e., a begin() and end() method) so
+  // that this can be used in a for (auto& dev : deviceList) expression?
+
+ private:
+  struct Deleter {
+    void operator()(IbvLib::device** ptr) {
+      TP_CHECK_IBV_VOID(ibvLib->free_device_list(ptr));
+    }
+
+    const IbvLib* ibvLib;
+  };
+
+  std::unique_ptr<IbvLib::device*, Deleter> deviceList_;
+  std::vector<IbvLib::device*> available_deviceList_;
+  int size_;
+};
 
 struct IbvProtectionDomainDeleter {
   void operator()(IbvLib::pd* ptr) {
