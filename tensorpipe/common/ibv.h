@@ -96,7 +96,16 @@ class IbvDeviceList {
       IbvContext tp_ctx_;
       IbvLib::port_attr portAttr;
       std::memset(&portAttr, 0, sizeof(portAttr));
-      tp_ctx_ = createIbvContext(ibvLib, *ptr[i]);
+
+      try {
+        tp_ctx_ = createIbvContext(ibvLib, *ptr[i]);
+      } catch (const std::system_error& e) {
+        TP_VLOG(1) << "Caught system_error with code " << e.code()
+                   << " meaning " << e.what() << "fail to open device "
+                   << ptr[i]->name;
+        continue;
+      }
+
       TP_CHECK_IBV_INT(ibvLib.query_port(tp_ctx_.get(), kPortNum, &portAttr));
 
       if (portAttr.link_layer != IbvLib::LINK_LAYER_INFINIBAND &&
